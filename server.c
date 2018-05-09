@@ -10,14 +10,17 @@
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #define BACKLOG 5
 #define MAXIMUM_SIZE 100
 #define FLAG 0
 #define PORT "8080"
+#define PACKET_SIZE 2048
 
-struct timeval timeIsPrecious;
-size_t len;
-char msg_to_be_sent[] = "HTTP/1.0 200 OK\nContent-Type: text/html; charset=UTF-8\nContent-Length:15 \n\n<html>ll</html>";
+size_t len, error_len;
+char msg_to_be_sent[] = "HTTP/1.0 200 OK\nContent-Type: text/html; charset=UTF-8\n\n";
+char error_msg[] = "HTTP/1.0 404 Not Found\n";
 
 char* getIp(struct sockaddr_in *client_addr) {
 	char ip[INET_ADDRSTRLEN];
@@ -81,15 +84,39 @@ int getSocketForBinding(){
 }
 
 void handleClient(int new_fd) {
-	
-	int total_msg_sent = 0;
-
-	while (total_msg_sent < len) {
-		int p = send(new_fd, msg_to_be_sent, len, FLAG);
-		total_msg_sent += p;
+	int bytes, total_msg_sent = 0;
+	int fildes;
+	char packet[PACKET_SIZE];
+	char *message;
+	message = malloc(10000);
+	int r = recv(new_fd, message, 9999,0);
+	if(r>0){
+		char* token;
+		token = strtok(message, " ");
+		token = strtok(NULL, " ");
+		char* file;
+		file = malloc(1000);
+		if(strcmp("/", token) == 0){
+			strcpy(file ,"public/index.html");
+		}
+		else if(strcmp("/sample", token) == 0){
+			strcpy(file , "public/sample.html");
+		}
+		else {
+			strcpy(file , "0");
+		}
+		fildes = open(file, O_RDONLY);
+		if(fildes == -1) {
+			perror("Error due to :");
+			write(new_fd, error_msg, error_len);
+			return;
+		}
+		send(new_fd, msg_to_be_sent, len, FLAG);
+		while((bytes = read(fildes, packet, PACKET_SIZE)) > 0){
+			write(new_fd, packet, bytes);
+		}
 	}
-
-	close(new_fd);
+	printf("closing connection\n");
 }
 
 int main(int argc, char const *argv[])
@@ -98,12 +125,10 @@ int main(int argc, char const *argv[])
 	socklen_t addr_size;
 	struct sockaddr_storage client_addr;
 
-	timeIsPrecious.tv_usec = 1000;
-
 	char *msg;
 
 	len = sizeof msg_to_be_sent;
-
+	error_len = sizeof error_msg;
 
 	fd_set all;
 	fd_set currently_all;
@@ -117,8 +142,8 @@ int main(int argc, char const *argv[])
 
 		currently_all = all;
 
-		int res = select(fdmax + 1, &currently_all, NULL, NULL, &timeIsPrecious);
-		for (int i = 0; i <= fdmax; ++i)
+		int res = select(fdmax + 1, &currently_all, NULL, NULL, NULL);
+		for (int i = fdmax; i >= 0; --i)
 		{
 			if(FD_ISSET(i, &currently_all)) {
 				if(i == listener) {
@@ -130,6 +155,7 @@ int main(int argc, char const *argv[])
 						printf("The following connection has been established:\t%s\n", getIp((struct sockaddr_in*)&client_addr));
 						handleClient(new_fd);
 					}
+					close(new_fd);
 				}
 			}
 		}
