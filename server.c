@@ -37,8 +37,8 @@ char* getIp(struct sockaddr_storage client_addr) {
 	}
 }
 
-void fixmsg(char *msg) {
-	msg = "HTTP....";
+void fixmsg(char **msg) {
+	*msg = "HTTP....";
 }
 
 void sendError(char *p) {
@@ -48,20 +48,22 @@ void sendError(char *p) {
 
 int main(int argc, char const *argv[])
 {
-	int status, socketfd, total_msg_sent, bytes_recv, bytes_sent, yes = 1, len;
+	int status, socketfd, total_msg_sent, bytes_recv, bytes_sent, yes = 1;
+	size_t len;
 	
 	socklen_t addr_size;
 	
 	char *msg;
-	char *msg_to_be_sent;
-	fixmsg(msg_to_be_sent);
+	char *msg_to_be_sent = (char*)malloc(100);
+	fixmsg(&msg_to_be_sent);
+	printf("%s\n", msg_to_be_sent);
 	len = sizeof msg_to_be_sent;
 
 	struct addrinfo hints;
 	struct sockaddr_storage client_addr;
 	struct addrinfo *servres;
-	struct fd_set *all;
-	struct fd_set *currently_all;
+	fd_set all;
+	fd_set currently_all;
 	struct timeval timeIsPrecious;
 	timeIsPrecious.tv_usec = 1000;
 
@@ -93,37 +95,46 @@ int main(int argc, char const *argv[])
 		if(bind(socketfd, (struct sockaddr *)serverInfo->ai_addr, sizeof *(serverInfo->ai_addr)) == -1) {
 			sendError("binding"); close(socketfd); 
 		}
+		else{
+			break;
+		}
 	}
 	if(serverInfo == NULL) {
 		printf("Sorry No server available\n");
 		exit(1);
 	}
 	if(listen(socketfd, BACKLOG) == -1) {sendError("listening"); exit(1); }
-	FD_SET(socketfd, all);
+	FD_SET(socketfd, &(all));
 	int fdmax = socketfd;
-	while(true) {
-		*currently_all = *all;
+	while(1) {
+		currently_all = all;
 		//SERVER WILL SEND DATA WHEN IT RECV SOMETHING OR IT FINDS A NEW CONNECTION
-		select(fdmax + 1, currently_all, 0, 0, timeIsPrecious);
+		int res = select(fdmax + 1, &currently_all, NULL, NULL, &timeIsPrecious);
 		for (int i = 0; i <= fdmax; ++i)
 		{
-			if(FD_ISSET(i, currently_all)) {
+			if(FD_ISSET(i, &currently_all)) {
 				if(i == socketfd) {
 					addr_size = sizeof client_addr;
 					int new_fd = accept(socketfd, (struct sockaddr *)&client_addr, &addr_size);
 					if(new_fd == -1) { sendError("new_fd"); continue; }
-					FD_SET(new_fd, all);
+					FD_SET(new_fd, &all);
 					fdmax = max(fdmax, new_fd);
 					printf("The following connection has been established:\t%s\n", getIp(client_addr));
 					total_msg_sent = 0;
+
 					while (total_msg_sent < len) {
-						total_msg_sent += send(i, msg, len, FLAG);
+						printf("In here %d :: %s\n", i, msg_to_be_sent);
+						int p = send(new_fd, msg_to_be_sent, len, FLAG);
+						if (p == -1)
+							printf("Got an error while sending\n");
+						total_msg_sent += p;
 					}
+					printf("In here again\n");
 				}
 				else {
 					if((bytes_recv = recv(i, msg, MAXIMUM_SIZE, FLAG)) == 0) {
 						if(i == fdmax) fdmax--;
-						FD_CLR(i, all);
+						FD_CLR(i, &all);
 						printf("One Connection Lost\n");
 						close(i);
 					}
