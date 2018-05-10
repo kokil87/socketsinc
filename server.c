@@ -15,7 +15,6 @@
 #define BACKLOG 5
 #define MAXIMUM_SIZE 100
 #define FLAG 0
-#define PORT "8080"
 #define PACKET_SIZE 2048
 
 size_t len, error_len;
@@ -35,7 +34,7 @@ void sendError(char *p) {
 	perror("");
 }
 
-int getSocketForBinding(){
+int getSocketForBinding(const char *PORT){
 	int status, socketfd, yes = 1;
 
 	struct addrinfo hints;
@@ -133,7 +132,12 @@ int main(int argc, char const *argv[])
 	fd_set all;
 	fd_set currently_all;
 
-	listener = getSocketForBinding();
+	if(argc <= 1){
+		printf("Usage : ./testserver PORT_NUMBER\n");
+		exit(1);
+	}
+
+	listener = getSocketForBinding(argv[1]);
 
 	FD_SET(listener, &(all));
 	int fdmax = listener;
